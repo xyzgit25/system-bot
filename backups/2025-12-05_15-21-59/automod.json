@@ -1,0 +1,68 @@
+{
+  "1431044986857590838": {
+    "enabled": true,
+    "spam": {
+      "enabled": true,
+      "maxMessages": 5,
+      "timeWindow": 10000,
+      "action": "delete",
+      "timeoutDuration": 60000
+    },
+    "caps": {
+      "enabled": false,
+      "minLength": 10,
+      "capsPercentage": 70,
+      "action": "delete",
+      "timeoutDuration": 60000
+    },
+    "links": {
+      "enabled": false,
+      "allowedDomains": [
+        "discord.com",
+        "youtube.com",
+        "youtu.be",
+        "twitch.tv"
+      ],
+      "action": "delete",
+      "timeoutDuration": 60000
+    },
+    "badWords": {
+      "enabled": false,
+      "words": [
+        "hurensohn",
+        "hure",
+        "fotze",
+        "schwuchtel",
+        "schwul",
+        "faggot",
+        "nigger",
+        "neger",
+        "spast",
+        "behindert",
+        "retard",
+        "idiot",
+        "dummkopf",
+        "arschloch",
+        "fick",
+        "ficken",
+        "scheiße",
+        "scheisse"
+      ],
+      "action": "delete",
+      "timeoutDuration": 60000
+    },
+    "antiRaid": {
+      "enabled": false,
+      "maxJoins": 5,
+      "timeWindow": 60000,
+      "action": "ban",
+      "timeoutDuration": 3600000
+    },
+    "whitelist": {
+      "roles": [],
+      "channels": [],
+      "users": []
+    },
+    "logChannel": null
+  }
+}
