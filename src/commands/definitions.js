@@ -99,11 +99,6 @@ const levelCommand = new SlashCommandBuilder()
     .setDMPermission(false)
     .addUserOption((option) => option.setName('user').setDescription('User dessen Level angezeigt werden soll (optional)'));
 
-const bewerbungCommand = new SlashCommandBuilder()
-    .setName('bewerbung')
-    .setDescription('Startet das Bewerbungsformular für Teambewerbungen')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
-    .setDMPermission(false);
 
 const paypalCommand = new SlashCommandBuilder()
     .setName('paypal')
@@ -116,28 +111,6 @@ const statsCommand = new SlashCommandBuilder()
     .setDescription('Zeigt Bot-Statistiken an (Tickets, Giveaways, aktive User)')
     .setDMPermission(false);
 
-const altBypassCommand = new SlashCommandBuilder()
-    .setName('alt-bypass')
-    .setDescription('Setzt oder entfernt einen Alt-Detection-Bypass für einen User')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    .setDMPermission(false)
-    .addUserOption((option) =>
-        option
-            .setName('user')
-            .setDescription('User, der von der Alt-Detection ausgenommen/entfernt werden soll')
-            .setRequired(true)
-    )
-    .addStringOption((option) =>
-        option
-            .setName('action')
-            .setDescription('Aktion: add = hinzufügen, remove = entfernen, toggle = umschalten')
-            .setRequired(false)
-            .addChoices(
-                { name: 'Hinzufügen', value: 'add' },
-                { name: 'Entfernen', value: 'remove' },
-                { name: 'Toggle', value: 'toggle' }
-            )
-    );
 const staffCommand = new SlashCommandBuilder()
     .setName('staff')
     .setDescription('Zeigt die aktuelle Staff-Liste anhand der konfigurierten Rollen')
@@ -345,10 +318,8 @@ const commandDefinitions = [
     ticketRemoveCommand,
     rolleCommand,
     levelCommand,
-    bewerbungCommand,
     paypalCommand,
     statsCommand,
-    altBypassCommand,
     staffCommand,
     giveawayListCommand,
     levelLeaderboardCommand,

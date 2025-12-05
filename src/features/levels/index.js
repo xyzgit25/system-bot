@@ -3,13 +3,18 @@ const {
     MessageFlags,
     PermissionFlagsBits,
     SeparatorBuilder,
-    TextDisplayBuilder
+    TextDisplayBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ActionRowBuilder
 } = require('discord.js');
 const { createJsonBackedMap } = require('../../services/jsonStore');
 
 function createLevelFeature({ client, sendLog, env }) {
     const { map: userLevels, load: loadLevelMap, save: saveLevelMap } = createJsonBackedMap('levels.json');
-    const xpCooldown = new Map();
+    const xpCooldownUser = new Map(); // per-user global cooldown
+    const xpCooldownChannel = new Map(); // per-user-per-channel cooldown
+    const lastMessageFingerprint = new Map(); // key: userId-guildId-channelId -> { fp, ts }
 
     function calculateLevel(xp) {
         return Math.floor(Math.sqrt(xp / 100));
@@ -19,18 +24,38 @@ function createLevelFeature({ client, sendLog, env }) {
         return level * level * 100;
     }
 
+    function fingerprintMessage(content) {
+        const norm = String(content || '')
+            .toLowerCase()
+            .replace(/[`*_~>|#:\\]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        let hash = 0;
+        for (let i = 0; i < norm.length; i++) {
+            hash = (hash * 31 + norm.charCodeAt(i)) >>> 0;
+        }
+        return hash.toString(16);
+    }
+
+    function computeXPAmount(messageContent) {
+        const len = Math.max(0, Math.min(500, (messageContent || '').length));
+        // Base: 5 XP for short, up to 25 XP for ~200+ chars
+        const base = Math.min(25, 5 + Math.floor(len / 10));
+        // Penalize very short messages
+        const penalty = len < 20 ? -5 : len < 40 ? -2 : 0;
+        return Math.max(1, base + penalty);
+    }
+
     async function addXP(userId, guildId, amount = 15) {
         const now = Date.now();
-        const cooldownKey = `${userId}-${guildId}`;
-
-        if (xpCooldown.has(cooldownKey)) {
-            const lastXP = xpCooldown.get(cooldownKey);
-            if (now - lastXP < 60000) {
+        const cooldownUserKey = `${userId}-${guildId}`;
+        if (xpCooldownUser.has(cooldownUserKey)) {
+            const lastXP = xpCooldownUser.get(cooldownUserKey);
+            if (now - lastXP < 45000) {
                 return false;
             }
         }
-
-        xpCooldown.set(cooldownKey, now);
+        xpCooldownUser.set(cooldownUserKey, now);
 
         const currentData = userLevels.get(userId) || { xp: 0, level: 0 };
         const oldLevel = currentData.level;
@@ -113,39 +138,61 @@ function createLevelFeature({ client, sendLog, env }) {
         });
     }
 
+    function buildSortedUsersOnServer(guild) {
+        const allUsers = Array.from(userLevels.entries())
+            .map(([userId, data]) => ({ userId, xp: data.xp || 0, level: data.level || 0 }));
+        const usersOnServer = [];
+        return Promise.all(
+            allUsers.map(async (user) => {
+                const member = await guild.members.fetch(user.userId).catch(() => null);
+                if (member) usersOnServer.push(user);
+            })
+        ).then(() => usersOnServer.sort((a, b) => (b.level !== a.level ? b.level - a.level : b.xp - a.xp)));
+    }
+
+    function renderLeaderboardPage(users, page, pageSize) {
+        const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
+        const clamped = Math.min(Math.max(1, page), totalPages);
+        const start = (clamped - 1) * pageSize;
+        const pageUsers = users.slice(start, start + pageSize);
+
+        let content = `**## <:settings:1434660812395384870> Level Leaderboard**\n` +
+            `Seite ${clamped}/${totalPages}\n\n`;
+        for (let i = 0; i < pageUsers.length; i++) {
+            const user = pageUsers[i];
+            const rank = start + i + 1;
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+            content += `${medal} <@${user.userId}>\n   └ Level ${user.level} | ${user.xp.toLocaleString('de-DE')} XP\n\n`;
+        }
+
+        const prevBtn = new ButtonBuilder()
+            .setCustomId('level_lb_prev')
+            .setLabel('Vorherige')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(clamped <= 1);
+        const nextBtn = new ButtonBuilder()
+            .setCustomId('level_lb_next')
+            .setLabel('Nächste')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(clamped >= totalPages);
+
+        const buttonRow = new ActionRowBuilder().addComponents(prevBtn, nextBtn);
+
+        const container = new ContainerBuilder()
+            .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))
+            .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing('Small'))
+            .addActionRowComponents(buttonRow);
+
+        return { container, totalPages, clamped };
+    }
+
     async function handleLevelLeaderboardCommand(interaction) {
         await interaction.deferReply();
 
         try {
-            const allUsers = Array.from(userLevels.entries())
-                .map(([userId, data]) => ({
-                    userId,
-                    xp: data.xp || 0,
-                    level: data.level || 0
-                }));
+            const usersOnServer = await buildSortedUsersOnServer(interaction.guild);
 
-            const usersOnServer = [];
-            for (const user of allUsers) {
-                try {
-                    const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
-                    if (member) {
-                        usersOnServer.push(user);
-                    }
-                } catch (error) {
-                    // User nicht auf Server, überspringen
-                }
-            }
-
-            const sortedUsers = usersOnServer
-                .sort((a, b) => {
-                    if (b.level !== a.level) {
-                        return b.level - a.level;
-                    }
-                    return b.xp - a.xp;
-                })
-                .slice(0, 10);
-
-            if (sortedUsers.length === 0) {
+            if (usersOnServer.length === 0) {
                 const emptyContainer = new ContainerBuilder()
                     .addTextDisplayComponents(
                         new TextDisplayBuilder().setContent('**## <:settings:1434660812395384870> Level Leaderboard**')
@@ -158,56 +205,70 @@ function createLevelFeature({ client, sendLog, env }) {
                     )
                     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing('Small'));
 
-                return interaction.editReply({
-                    content: '',
-                    components: [emptyContainer],
-                    flags: MessageFlags.IsComponentsV2
-                });
+                return interaction.editReply({ content: '', components: [emptyContainer], flags: MessageFlags.IsComponentsV2 });
             }
 
-            let leaderboardContent = '**## <:settings:1434660812395384870> Level Leaderboard (Top 10)**\n\n';
-
-            for (let i = 0; i < sortedUsers.length; i++) {
-                const user = sortedUsers[i];
-                const rank = i + 1;
-                const medal =
-                    rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
-
-                try {
-                    const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
-                    if (member) {
-                        leaderboardContent +=
-                            `${medal} <@${user.userId}>\n` +
-                            `   └ Level ${user.level} | ${user.xp.toLocaleString('de-DE')} XP\n\n`;
-                    }
-                } catch (error) {
-                    // User nicht mehr auf Server, überspringen
-                }
-            }
-
-            const leaderboardContainer = new ContainerBuilder()
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(leaderboardContent))
-                .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing('Small'));
-
-            await interaction.editReply({
-                content: '',
-                components: [leaderboardContainer],
-                flags: MessageFlags.IsComponentsV2
-            });
+            const pageSize = 10;
+            const { container } = renderLeaderboardPage(usersOnServer, 1, pageSize);
+            await interaction.editReply({ content: '', components: [container], flags: MessageFlags.IsComponentsV2 });
         } catch (error) {
             console.error('Fehler beim Abrufen des Leaderboards:', error);
-            await interaction.editReply({
-                content: '<:close:1434661746643308675> Fehler beim Abrufen des Leaderboards!'
-            });
+            await interaction.editReply({ content: '<:close:1434661746643308675> Fehler beim Abrufen des Leaderboards!' });
         }
     }
+
+    async function handleLeaderboardNav(interaction, direction) {
+        try {
+            const usersOnServer = await buildSortedUsersOnServer(interaction.guild);
+            const pageSize = 10;
+            // Extract current page from message content if present
+            const content = interaction.message.components?.[0]?.textDisplays?.[0]?.content || '';
+            const match = content.match(/Seite\s(\d+)\/(\d+)/);
+            let current = 1;
+            let total = Math.max(1, Math.ceil(usersOnServer.length / pageSize));
+            if (match) {
+                current = parseInt(match[1], 10);
+                total = parseInt(match[2], 10);
+            }
+            const nextPage = direction === 'prev' ? Math.max(1, current - 1) : Math.min(total, current + 1);
+            const { container } = renderLeaderboardPage(usersOnServer, nextPage, pageSize);
+            await interaction.update({ content: '', components: [container], flags: MessageFlags.IsComponentsV2 });
+        } catch (error) {
+            await interaction.deferUpdate().catch(() => {});
+        }
+    }
+
+    const buttonHandlers = {
+        level_lb_prev: (interaction) => handleLeaderboardNav(interaction, 'prev'),
+        level_lb_next: (interaction) => handleLeaderboardNav(interaction, 'next')
+    };
 
     client.on('messageCreate', async (message) => {
         if (message.author.bot || !message.guild) return;
         if (message.content.startsWith('/')) return;
 
         try {
-            await addXP(message.author.id, message.guild.id, 15);
+            const fpKey = `${message.author.id}-${message.guild.id}-${message.channel.id}`;
+            const fp = fingerprintMessage(message.content);
+            const last = lastMessageFingerprint.get(fpKey);
+            const now = Date.now();
+
+            // Per-channel cooldown: 45s
+            const chCooldownKey = `${message.author.id}-${message.guild.id}-${message.channel.id}`;
+            const lastCh = xpCooldownChannel.get(chCooldownKey);
+            if (lastCh && (now - lastCh) < 45000) {
+                return;
+            }
+            xpCooldownChannel.set(chCooldownKey, now);
+
+            // Uniqueness heuristic: skip if same fingerprint within 10 minutes
+            if (last && last.fp === fp && (now - last.ts) < 10 * 60 * 1000) {
+                return;
+            }
+            lastMessageFingerprint.set(fpKey, { fp, ts: now });
+
+            const amount = computeXPAmount(message.content);
+            await addXP(message.author.id, message.guild.id, amount);
         } catch (error) {
             console.error('Fehler beim Hinzufügen von XP:', error);
         }
@@ -276,7 +337,8 @@ function createLevelFeature({ client, sendLog, env }) {
             level: handleLevelCommand,
             'level-leaderboard': handleLevelLeaderboardCommand,
             'level-reset': handleLevelResetCommand
-        }
+        },
+        buttonHandlers
     };
 }
 

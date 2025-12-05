@@ -1829,7 +1829,7 @@ function createTicketFeature({ client, sendLog, env }) {
             'ticket-rename': handleTicketRename,
             'ticket-add': handleTicketAdd,
             'ticket-remove': handleTicketRemove,
-            bewerbung: handleBewerbungCommand
+            
         },
         selectMenuHandlers: {
             ticket_select: handleTicketSelect,

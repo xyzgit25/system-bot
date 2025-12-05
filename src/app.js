@@ -260,6 +260,7 @@ const commandRegistry = createCommandRegistry([
 const buttonHandlers = new Map([
     ...Object.entries(tickets.buttonHandlers || {}),
     ...Object.entries(giveaways.buttonHandlers || {}),
+    ...Object.entries(levels.buttonHandlers || {}),
     ...Object.entries(community.buttonHandlers || {}),
     ...Object.entries(paypal.buttonHandlers || {}),
     ...Object.entries(automod.buttonHandlers || {})

@@ -1,0 +1,18 @@
+Levels & Community
+
+XP fairness: Normalize XP per message by length and uniqueness; add anti-farm measures (cooldown per channel).
+Leaderboards: Paginated leaderboards with filters (weekly/monthly); consider /level-top scope parameter.
+
+Giveaways
+
+Eligibility gates: Optional role, account age, and server-join age checks at entry time.
+Fair rerolls: Log original winners and rerolls to prevent repeats across rerolls.
+
+Observability
+
+Health dashboard: Expand /bot-status with shard stats, event loop lag, REST rate limit buckets.
+
+Security & Safety
+
+Permission diffs: Before editing overwrites, compute diffs and only apply necessary changes; log exact changes for audits.
+Input validation: Sanitize all user-provided strings for embeds and modals (truncate, strip ZWJ/ZWNJ, block markdown breakers).
